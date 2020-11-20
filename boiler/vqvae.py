@@ -112,9 +112,9 @@ class Decoder(nn.Module):
 class VQVAE2(nn.Module):
     def __init__(
         self,
-        in_channel=3,
+        in_channel=1,
         channel=128,
-        n_res_block=2,
+        n_res_block=4,
         n_res_channel=32,
         embed_dim=64,
         n_embed=512,
@@ -168,9 +168,18 @@ class VQVAE2(nn.Module):
 
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
 
+    def encode_bag(self, input):
+        _, _, _, _, id_b = self.encode(input)
+
+        n_embed = self.quantize_b.n_embed
+        id_b_flat = id_b.view(input.size(0), -1)
+        bag = torch.zeros(input.size(0), n_embed).long().cuda()
+        bag.scatter_add_(dim=1, index=id_b_flat, src=torch.ones_like(id_b_flat))
+        bag = F.normalize(bag.float(), p=2)
+        return bag, id_b
+
     def decode(self, quant_t, quant_b):
         upsample_t = self.upsample_t(quant_t)
-        #print('t', quant_t.shape, upsample_t.shape, 'q', quant_b.shape)
         quant = torch.cat([upsample_t, quant_b], 1)
         dec = self.dec(quant)
 
@@ -184,57 +193,4 @@ class VQVAE2(nn.Module):
 
         dec = self.decode(quant_t, quant_b)
 
-        return dec
-
-
-class VQVAE(nn.Module):
-    def __init__(
-        self,
-        in_channel=3,
-        channel=128,
-        n_res_block=2,
-        n_res_channel=32,
-        embed_dim=64,
-        n_embed=512,
-        decay=0.99,
-    ):
-        super().__init__()
-
-        self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride=4)
-        self.quantize_conv_b = nn.Conv2d(channel, embed_dim, 1)
-        self.quantize_b = Quantize(embed_dim, n_embed)
-        self.dec = Decoder(
-            embed_dim,
-            in_channel,
-            channel,
-            n_res_block,
-            n_res_channel,
-            stride=4,
-        )
-
-    def forward(self, input):
-        quant_b, diff, _ = self.encode(input)
-        dec = self.decode(quant_b)
-
-        return dec, diff
-
-    def encode(self, input):
-        enc_b = self.enc_b(input)
-
-        quant_b = self.quantize_conv_b(enc_b).permute(0, 2, 3, 1)
-        quant_b, diff_b, id_b = self.quantize_b(quant_b)
-        quant_b = quant_b.permute(0, 3, 1, 2)
-        diff_b = diff_b.unsqueeze(0)
-
-        return quant_b, diff_b, id_b
-
-    def decode(self, quant_b):
-        dec = self.dec(quant_b)
-        return dec
-
-    def decode_code(self, code_b):
-        quant_b = self.quantize_b.embed_code(code_b)
-        quant_b = quant_b.permute(0, 3, 1, 2)
-
-        dec = self.decode(quant_b)
         return dec
