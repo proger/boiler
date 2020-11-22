@@ -25,7 +25,7 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
 
     sample_size = 25
 
-    for i, (_filename, waveform) in enumerate(loader):
+    for i, waveform in enumerate(loader):
         model.zero_grad()
 
         waveform = waveform.cuda()
@@ -66,7 +66,7 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
                 out, _ = model(sample)
 
             vertical_bar = torch.zeros(sample_size, 1, args.n_mel_channels, 5)
-            demo = torch.cat([sample, vertical_bar, out], dim=-1).cpu()
+            demo = torch.cat([sample.cpu(), vertical_bar, out.cpu()], dim=-1)
             demo = torchvision.utils.make_grid(demo, nrow=1, normalize=True)
 
             writer.add_image('sample', demo, steps)

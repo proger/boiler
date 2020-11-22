@@ -9,9 +9,9 @@ class Audio2Mel(nn.Module):
     def __init__(
         self,
         n_fft=1024,
-        hop_length=256,
+        hop_length=512,
         win_length=1024,
-        sampling_rate=22050,
+        sampling_rate=16000,
         n_mel_channels=80,
         mel_fmin=0.0,
         mel_fmax=None,

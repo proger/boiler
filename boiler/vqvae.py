@@ -117,7 +117,7 @@ class VQVAE2(nn.Module):
         n_res_block=4,
         n_res_channel=32,
         embed_dim=64,
-        n_embed=512,
+        n_embed=128,
         decay=0.99,
     ):
         super().__init__()
@@ -178,14 +178,15 @@ class VQVAE2(nn.Module):
         bag = F.normalize(bag.float(), p=2)
         return bag, id_b
 
-    def encode_bag_t(self, input):
-        _, _, _, id_t, _= self.encode(input)
+    def encode_bag_t(self, input, normalize=True):
+        _, _, _, id_t, _ = self.encode(input)
 
         n_embed = self.quantize_t.n_embed
         flat = id_t.view(input.size(0), -1)
         bag = torch.zeros(input.size(0), n_embed).long().cuda()
         bag.scatter_add_(dim=1, index=flat, src=torch.ones_like(flat))
-        bag = F.normalize(bag.float(), p=2)
+        if normalize:
+            bag = F.normalize(bag.float(), p=2)
         return bag, id_t
 
 
@@ -205,3 +206,5 @@ class VQVAE2(nn.Module):
         dec = self.decode(quant_t, quant_b)
 
         return dec
+
+
