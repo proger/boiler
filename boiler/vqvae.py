@@ -42,73 +42,6 @@ class ResBlock(nn.Module):
 
         return out
 
-
-class Encoder(nn.Module):
-    def __init__(self, in_channel, channel, n_res_block, n_res_channel, stride):
-        super().__init__()
-
-        if stride == 4:
-            blocks = [
-                nn.Conv2d(in_channel, channel // 2, 4, stride=2, padding=1),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(channel // 2, channel, 4, stride=2, padding=1),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(channel, channel, 3, padding=1),
-            ]
-
-        elif stride == 2:
-            blocks = [
-                nn.Conv2d(in_channel, channel // 2, 4, stride=2, padding=1),
-                nn.ReLU(inplace=True),
-                nn.Conv2d(channel // 2, channel, 3, padding=1),
-            ]
-
-        for i in range(n_res_block):
-            blocks.append(ResBlock(channel, n_res_channel))
-
-        blocks.append(nn.ReLU(inplace=True))
-
-        self.blocks = nn.Sequential(*blocks)
-
-    def forward(self, input):
-        return self.blocks(input)
-
-
-class Decoder(nn.Module):
-    def __init__(
-        self, in_channel, out_channel, channel, n_res_block, n_res_channel, stride
-    ):
-        super().__init__()
-
-        blocks = [nn.Conv2d(in_channel, channel, 3, padding=1)]
-
-        for i in range(n_res_block):
-            blocks.append(ResBlock(channel, n_res_channel))
-
-        blocks.append(nn.ReLU(inplace=True))
-
-        if stride == 4:
-            blocks.extend(
-                [
-                    nn.ConvTranspose2d(channel, channel // 2, 4, stride=2, padding=1),
-                    nn.ReLU(inplace=True),
-                    nn.ConvTranspose2d(
-                        channel // 2, out_channel, 4, stride=2, padding=1
-                    ),
-                ]
-            )
-
-        elif stride == 2:
-            blocks.append(
-                nn.ConvTranspose2d(channel, out_channel, 4, stride=2, padding=1)
-            )
-
-        self.blocks = nn.Sequential(*blocks)
-
-    def forward(self, input):
-        return self.blocks(input)
-
-
 class VQVAE2(nn.Module):
     def __init__(
         self,
@@ -122,25 +55,47 @@ class VQVAE2(nn.Module):
     ):
         super().__init__()
 
-        self.enc_b = Encoder(in_channel, channel, n_res_block, n_res_channel, stride=4)
-        self.enc_t = Encoder(channel, channel, n_res_block, n_res_channel, stride=2)
+        self.enc_b = nn.Sequential(
+            nn.Conv2d(in_channel, channel // 2, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel // 2, channel, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel, channel, kernel_size=3, stride=1, padding=1),
+            nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
+            nn.ReLU(inplace=True)
+        )
+
+        self.enc_t = nn.Sequential(
+            nn.Conv2d(channel, channel // 2, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel // 2, channel, kernel_size=3, padding=1),
+            nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
+            nn.ReLU(inplace=True)
+        )
+
         self.quantize_conv_t = nn.Conv2d(channel, embed_dim, 1)
         self.quantize_t = Quantize(embed_dim, n_embed)
-        self.dec_t = Decoder(
-            embed_dim, embed_dim, channel, n_res_block, n_res_channel, stride=2
+
+        self.dec_t = nn.Sequential(
+            nn.Conv2d(embed_dim, channel, kernel_size=3, stride=1, padding=1),
+            nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(channel, embed_dim, kernel_size=4, stride=2, padding=1)
         )
+
         self.quantize_conv_b = nn.Conv2d(embed_dim + channel, embed_dim, 1)
         self.quantize_b = Quantize(embed_dim, n_embed)
         self.upsample_t = nn.ConvTranspose2d(
             embed_dim, embed_dim, 4, stride=2, padding=1
         )
-        self.dec = Decoder(
-            embed_dim + embed_dim,
-            in_channel,
-            channel,
-            n_res_block,
-            n_res_channel,
-            stride=4,
+
+        self.dec = nn.Sequential(
+            nn.Conv2d(embed_dim + embed_dim, channel, kernel_size=3, stride=1, padding=1),
+            nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(channel, channel // 2, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(channel // 2, in_channel, kernel_size=4, stride=2, padding=1)
         )
 
     def forward(self, input):
