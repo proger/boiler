@@ -9,6 +9,7 @@ setup(
     long_description=open('README.md').read(),
     install_requires=[
         "annoy",
+        "librosa",
         "scipy",
         "torch",
         "torchaudio",
