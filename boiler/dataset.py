@@ -28,11 +28,9 @@ class WavFile(torch.utils.data.Dataset):
         sample = sample.repeat(math.ceil(self.length / len(sample)))[:self.length]
         sample = sample.unsqueeze(0)
 
-        if augment:
-            amplitude = 0.3 + torch.rand(1)
-            return sample * amplitude
-        else:
-            return sample
+        # amplitude normalization
+        sample /= sample.max()
+        return sample
 
     def __len__(self):
         return 1
