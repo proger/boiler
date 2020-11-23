@@ -42,6 +42,7 @@ class ResBlock(nn.Module):
 
         return out
 
+
 class VQVAE2(nn.Module):
     def __init__(
         self,
@@ -70,7 +71,11 @@ class VQVAE2(nn.Module):
             nn.ReLU(inplace=True),
             nn.Conv2d(channel // 2, channel, kernel_size=3, padding=1),
             nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel, channel, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(channel, channel, kernel_size=3, stride=2, padding=1),
+            nn.ReLU(inplace=True),
         )
 
         self.quantize_conv_t = nn.Conv2d(channel, embed_dim, 1)
@@ -80,13 +85,17 @@ class VQVAE2(nn.Module):
             nn.Conv2d(embed_dim, channel, kernel_size=3, stride=1, padding=1),
             nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
             nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(channel, channel, kernel_size=(4, 6), stride=4, padding=1),
+            nn.ReLU(inplace=True),
             nn.ConvTranspose2d(channel, embed_dim, kernel_size=4, stride=2, padding=1)
         )
 
         self.quantize_conv_b = nn.Conv2d(embed_dim + channel, embed_dim, 1)
         self.quantize_b = Quantize(embed_dim, n_embed)
-        self.upsample_t = nn.ConvTranspose2d(
-            embed_dim, embed_dim, 4, stride=2, padding=1
+        self.upsample_t = nn.Sequential(
+            nn.ConvTranspose2d(embed_dim, embed_dim, kernel_size=(4, 6), stride=4, padding=1),
+            nn.ReLU(inplace=True),
+            nn.ConvTranspose2d(embed_dim, embed_dim, 4, stride=2, padding=1)
         )
 
         self.dec = nn.Sequential(
@@ -104,13 +113,15 @@ class VQVAE2(nn.Module):
 
         return dec, diff
 
+
     def encode(self, input):
         enc_b = self.enc_b(input)
         enc_t = self.enc_t(enc_b)
 
-        quant_t = self.quantize_conv_t(enc_t).permute(0, 2, 3, 1)
+        quant_t = self.quantize_conv_t(enc_t).mean(dim=-2, keepdim=True).permute(0, 2, 3, 1)
         quant_t, diff_t, id_t = self.quantize_t(quant_t)
         quant_t = quant_t.permute(0, 3, 1, 2)
+        quant_t = F.interpolate(quant_t, scale_factor=(3,1))
         diff_t = diff_t.unsqueeze(0)
 
         dec_t = self.dec_t(quant_t)
@@ -123,6 +134,7 @@ class VQVAE2(nn.Module):
 
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
 
+
     def encode_bag(self, input):
         _, _, _, _, id_b = self.encode(input)
 
@@ -132,6 +144,7 @@ class VQVAE2(nn.Module):
         bag.scatter_add_(dim=1, index=id_b_flat, src=torch.ones_like(id_b_flat))
         bag = F.normalize(bag.float(), p=2)
         return bag, id_b
+
 
     def encode_bag_t(self, input, normalize=True):
         _, _, _, id_t, _ = self.encode(input)

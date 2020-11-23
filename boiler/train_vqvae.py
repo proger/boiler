@@ -71,6 +71,9 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
 
             writer.add_image('sample', demo, steps)
 
+            if i == 0:
+                writer.add_graph(model, sample)
+
             model.train()
 
         steps += 1
