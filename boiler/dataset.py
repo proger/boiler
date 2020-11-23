@@ -1,9 +1,16 @@
 import math
+from pathlib import Path
 
 import torch
 import torch.utils.data
 
 import scipy.io.wavfile
+
+
+def wav_index(wav_dir=Path('/home/proger/coub-crawler/monthlyLog/wav'), epoch=0):
+    wavi = [WavFile(wav) for wav in wav_dir.glob('*.wav')]
+    wavk = {wavf.filename.stem: i for i, wavf in enumerate(wavi)}
+    return wavi, wavk
 
 
 class WavFile(torch.utils.data.Dataset):
