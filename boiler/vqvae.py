@@ -137,14 +137,15 @@ class VQVAE2(nn.Module):
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
 
 
-    def encode_bag(self, input):
+    def encode_bag(self, input, normalize=True):
         _, _, _, _, id_b = self.encode(input)
 
         n_embed = self.quantize_b.n_embed
-        id_b_flat = id_b.view(input.size(0), -1)
+        flat = id_b.view(input.size(0), -1)
         bag = torch.zeros(input.size(0), n_embed).long().cuda()
-        bag.scatter_add_(dim=1, index=id_b_flat, src=torch.ones_like(id_b_flat))
-        bag = F.normalize(bag.float(), p=2)
+        bag.scatter_add_(dim=1, index=flat, src=torch.ones_like(flat))
+        if normalize:
+            bag = F.normalize(bag.float(), p=2)
         return bag, id_b
 
 
