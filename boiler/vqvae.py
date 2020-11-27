@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from .quantize import Quantize
+from .quantize import Quantize, VectorQuant
 
 # Copyright 2018 The Sonnet Authors. All Rights Reserved.
 #
@@ -51,13 +51,13 @@ class VQVAE2(nn.Module):
         n_res_block=4,
         n_res_channel=32,
         embed_dim=64,
-        n_embed=128,
+        n_embed=(64, 512),
         decay=0.99,
     ):
         super().__init__()
 
         self.enc_b = nn.Sequential(
-            nn.Conv2d(in_channel, channel // 2, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(in_channel, channel // 2, kernel_size=8, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(channel // 2, channel, kernel_size=4, stride=2, padding=1),
             nn.ReLU(inplace=True),
@@ -67,7 +67,7 @@ class VQVAE2(nn.Module):
         )
 
         self.enc_t = nn.Sequential(
-            nn.Conv2d(channel, channel // 2, kernel_size=4, stride=2, padding=1),
+            nn.Conv2d(channel, channel // 2, kernel_size=20, stride=2, padding=1),
             nn.ReLU(inplace=True),
             nn.Conv2d(channel // 2, channel, kernel_size=3, padding=1),
             nn.Sequential(*[ResBlock(channel, n_res_channel) for _ in range(n_res_block)]),
@@ -78,8 +78,11 @@ class VQVAE2(nn.Module):
             # nn.ReLU(inplace=True),
         )
 
+        n_embed_t, n_embed_b = (n_embed, n_embed) if isinstance(n_embed, int) else n_embed
+
         self.quantize_conv_t = nn.Conv2d(channel, embed_dim, 1)
-        self.quantize_t = Quantize(embed_dim, n_embed)
+        #self.quantize_t = Quantize(embed_dim, n_embed_t)
+        self.quantize_t = VectorQuant(1, n_embed_t, embed_dim)
 
         self.dec_t = nn.Sequential(
             nn.Conv2d(embed_dim, channel, kernel_size=3, stride=1, padding=1),
@@ -87,15 +90,17 @@ class VQVAE2(nn.Module):
             nn.ReLU(inplace=True),
             # nn.ConvTranspose2d(channel, channel, kernel_size=(4, 6), stride=4, padding=1),
             # nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(channel, embed_dim, kernel_size=4, stride=2, padding=1)
+            nn.ConvTranspose2d(channel, embed_dim, kernel_size=21, stride=2, padding=1)
         )
 
         self.quantize_conv_b = nn.Conv2d(embed_dim + channel, embed_dim, 1)
-        self.quantize_b = Quantize(embed_dim, n_embed)
+        #self.quantize_b = Quantize(embed_dim, n_embed_b)
+        self.quantize_b = VectorQuant(1, n_embed_b, embed_dim)
+
         self.upsample_t = nn.Sequential(
             # nn.ConvTranspose2d(embed_dim, embed_dim, kernel_size=(4, 6), stride=4, padding=1),
             # nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(embed_dim, embed_dim, 4, stride=2, padding=1)
+            nn.ConvTranspose2d(embed_dim, embed_dim, kernel_size=21, stride=2, padding=1)
         )
 
         self.dec = nn.Sequential(
@@ -104,17 +109,17 @@ class VQVAE2(nn.Module):
             nn.ReLU(inplace=True),
             nn.ConvTranspose2d(channel, channel // 2, kernel_size=4, stride=2, padding=1),
             nn.ReLU(inplace=True),
-            nn.ConvTranspose2d(channel // 2, in_channel, kernel_size=4, stride=2, padding=1)
+            nn.ConvTranspose2d(channel // 2, in_channel, kernel_size=8, stride=2, padding=1)
         )
 
-    def forward(self, input):
+    def _forward(self, input):
         quant_t, quant_b, diff, _, _ = self.encode(input)
         dec = self.decode(quant_t, quant_b)
 
         return dec, diff
 
 
-    def encode(self, input):
+    def _encode(self, input):
         enc_b = self.enc_b(input)
         enc_t = self.enc_t(enc_b)
 
@@ -136,28 +141,57 @@ class VQVAE2(nn.Module):
 
         return quant_t, quant_b, diff_t + diff_b, id_t, id_b
 
+    def forward(self, input):
+        quant_t, quant_b, pen, _, _ = self.encode(input)
+        dec = self.decode(quant_t, quant_b)
 
-    def encode_bag(self, input, normalize=True):
+        return dec, pen
+
+
+    def encode(self, input):
+        enc_b = self.enc_b(input)
+        enc_t = self.enc_t(enc_b)
+
+        quant_t = self.quantize_conv_t(enc_t)
+        quant_t = quant_t.permute(0, 3, 2, 1) # batch, time, mel, emb
+        quant_t, id_t, vq_pen_t, encoder_pen_t, entropy_t = self.quantize_t(quant_t)
+        quant_t = quant_t.permute(0, 3, 2, 1)
+        vq_pen_t = vq_pen_t.unsqueeze(0)
+
+        dec_t = self.dec_t(quant_t)
+        enc_b = torch.cat([dec_t, enc_b], 1)
+
+        quant_b = self.quantize_conv_b(enc_b)
+        quant_b = quant_b.permute(0, 3, 2, 1)
+        quant_b, id_b, vq_pen_b, encoder_pen_b, entropy_b = self.quantize_b(quant_b)
+        quant_b = quant_b.permute(0, 3, 2, 1)
+        vq_pen_b = vq_pen_b.unsqueeze(0)
+
+        # large weight for encoder_pen causes codebook collapse early in training
+        return quant_t, quant_b, vq_pen_t.mean() + vq_pen_b.mean() + 0.01 * (encoder_pen_t.mean() + encoder_pen_b.mean()), id_t, id_b
+
+
+    def encode_bag(self, input, normalize: bool = True):
         _, _, _, _, id_b = self.encode(input)
 
-        n_embed = self.quantize_b.n_embed
+        n_embed = self.quantize_b.n_classes  # .n_embed
         flat = id_b.view(input.size(0), -1)
         bag = torch.zeros(input.size(0), n_embed).long().cuda()
         bag.scatter_add_(dim=1, index=flat, src=torch.ones_like(flat))
         if normalize:
-            bag = F.normalize(bag.float(), p=2)
+            bag = F.normalize(bag.float(), p=2.)
         return bag, id_b
 
 
-    def encode_bag_t(self, input, normalize=True):
+    def encode_bag_t(self, input, normalize: bool = True):
         _, _, _, id_t, _ = self.encode(input)
 
-        n_embed = self.quantize_t.n_embed
+        n_embed = self.quantize_t.n_classes  # .n_embed
         flat = id_t.view(input.size(0), -1)
         bag = torch.zeros(input.size(0), n_embed).long().cuda()
         bag.scatter_add_(dim=1, index=flat, src=torch.ones_like(flat))
         if normalize:
-            bag = F.normalize(bag.float(), p=2)
+            bag = F.normalize(bag.float(), p=2.)
         return bag, id_t
 
 

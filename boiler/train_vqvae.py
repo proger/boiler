@@ -29,6 +29,7 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
         model.zero_grad()
 
         waveform = waveform.cuda()
+
         img = fft(waveform).detach().to(args.device).unsqueeze(1)
 
         out, latent_loss = model(img)
@@ -41,6 +42,9 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
+
+        model.quantize_t.after_update()
+        model.quantize_b.after_update()
 
         lr = optimizer.param_groups[0]["lr"]
 
