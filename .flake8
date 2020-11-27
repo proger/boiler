@@ -1,0 +1,9 @@
+[flake8]
+# E302: expected 2 blank lines, found 0
+# E265: block comment should start with '# '
+# E241: multiple spaces after ':'
+# E401: multiple imports on one line
+# inline comment should start with '# ' [E262]
+# E231: missing whitespace after ','
+ignore = E302,E265,E241,E401,E262,E231
+max-line-length = 120

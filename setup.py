@@ -9,7 +9,10 @@ setup(
     long_description=open('README.md').read(),
     install_requires=[
         "annoy",
+        "fastapi",
         "librosa",
+        "musicnn",
+        "pydantic",
         "scipy",
         "torch",
         "torchaudio",
