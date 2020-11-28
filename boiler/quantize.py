@@ -19,7 +19,7 @@ class VectorQuant(nn.Module):
             self.embedding_scale = 1e-3
             self.normalize_scale = None
         self.embedding0 = nn.Parameter(torch.randn(n_channels, n_classes, vec_len, requires_grad=True) * self.embedding_scale)
-        self.offset = torch.arange(n_channels).cuda() * n_classes
+        self.offset = torch.arange(n_channels) * n_classes
         # self.offset: (n_channels) long tensor
         self.n_classes = n_classes
         self.vec_len = vec_len
@@ -27,7 +27,7 @@ class VectorQuant(nn.Module):
 
     def forward(self, x0):
         if self.normalize_scale:
-            target_norm = self.normalize_scale * torch.sqrt(torch.tensor([x0.size(3)], dtype=torch.float, device=self.embedding0.device))
+            target_norm = self.normalize_scale * torch.sqrt(torch.tensor([x0.size(3)], dtype=self.embedding0.dtype, device=self.embedding0.device))
             x = target_norm * x0 / x0.norm(dim=3, p=2, keepdim=True)
             embedding = target_norm * self.embedding0 / self.embedding0.norm(dim=2, p=2, keepdim=True)
         else:
@@ -49,6 +49,8 @@ class VectorQuant(nn.Module):
         prob = hist.masked_select(hist > 0) / len(index)
         entropy = - (prob * prob.log()).sum().detach()
 
+        self.offset = self.offset.to(index.device)
+
         index1 = (index + self.offset).view(index.size(0) * index.size(1))
         # index1: (N*samples*n_channels) long tensor
         output_flat = embedding.view(-1, embedding.size(2)).index_select(dim=0, index=index1)
@@ -63,5 +65,5 @@ class VectorQuant(nn.Module):
     def after_update(self):
         if self.normalize_scale:
             with torch.no_grad():
-                target_norm = self.embedding_scale * torch.sqrt(torch.Tensor([self.embedding0.size(2)]))
+                target_norm = self.embedding_scale * torch.sqrt(torch.tensor([self.embedding0.size(2)], dtype=self.embedding0.dtype, device=self.embedding0.device))
                 self.embedding0.mul_(target_norm / self.embedding0.norm(dim=2, keepdim=True))

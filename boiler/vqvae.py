@@ -54,6 +54,10 @@ class VQVAE2(nn.Module):
     ):
         super().__init__()
 
+        # this is only used to int8-quantize the top encoder
+        # self.int8_quant = torch.quantization.QuantStub()
+        # self.int8_dequant = torch.quantization.DeQuantStub()
+
         self.enc_b = nn.Sequential(
             nn.Conv2d(in_channel, channel // 2, kernel_size=8, stride=2, padding=1),
             nn.ReLU(inplace=True),
@@ -106,15 +110,22 @@ class VQVAE2(nn.Module):
 
         return dec, pen
 
-    def encode(self, input):
+    def encode_top(self, input):
+        # input = self.int8_quant(input)
         enc_b = self.enc_b(input)
         enc_t = self.enc_t(enc_b)
 
         quant_t = self.quantize_conv_t(enc_t)
-        quant_t = quant_t.permute(0, 3, 2, 1) # batch, time, mel, emb
+        quant_t = quant_t.permute(0, 3, 2, 1)  # batch, time, mel, emb
         quant_t, id_t, vq_pen_t, encoder_pen_t, entropy_t = self.quantize_t(quant_t)
         quant_t = quant_t.permute(0, 3, 2, 1)
         vq_pen_t = vq_pen_t.unsqueeze(0)
+
+        # quant_t = self.int8_dequant(quant_t)
+        return enc_b, quant_t, vq_pen_t.mean(), encoder_pen_t.mean(), id_t
+
+    def encode(self, input):
+        enc_b, quant_t, vq_pen_t_mean, encoder_pen_t_mean, id_t = self.encode_top(input)
 
         dec_t = self.dec_t(quant_t)
         enc_b = torch.cat([dec_t, enc_b], 1)
@@ -126,27 +137,29 @@ class VQVAE2(nn.Module):
         vq_pen_b = vq_pen_b.unsqueeze(0)
 
         # large weight for encoder_pen causes codebook collapse early in training
-        return quant_t, quant_b, vq_pen_t.mean() + vq_pen_b.mean() + 0.01 * (encoder_pen_t.mean() + encoder_pen_b.mean()), id_t, id_b
+        latent_loss = vq_pen_t_mean + vq_pen_b.mean() + 0.01 * (encoder_pen_t_mean + encoder_pen_b.mean())
+        return quant_t, quant_b, latent_loss, id_t, id_b
 
     def encode_bag(self, input, normalize: bool = True):
         _, _, _, _, id_b = self.encode(input)
 
         n_embed = self.quantize_b.n_classes  # .n_embed
         flat = id_b.view(input.size(0), -1)
-        bag = torch.zeros(input.size(0), n_embed).long().cuda()
+        bag = torch.zeros(input.size(0), n_embed, dtype=id_b.dtype, device=id_b.device)
         bag.scatter_add_(dim=1, index=flat, src=torch.ones_like(flat))
         if normalize:
             bag = F.normalize(bag.float(), p=2.)
         return bag, id_b
 
     def encode_bag_t(self, input, normalize: bool = True):
-        _, _, _, id_t, _ = self.encode(input)
+        quant_t, _, _, _, id_t = self.encode_top(input)
 
         n_embed = self.quantize_t.n_classes  # .n_embed
         flat = id_t.view(input.size(0), -1)
-        bag = torch.zeros(input.size(0), n_embed).long().cuda()
+        bag = torch.zeros(input.size(0), n_embed, dtype=id_t.dtype, device=id_t.device)
         bag.scatter_add_(dim=1, index=flat, src=torch.ones_like(flat))
         if normalize:
+            #bag = F.normalize(bag.type(quant_t.dtype), p=2.)
             bag = F.normalize(bag.float(), p=2.)
         return bag, id_t
 

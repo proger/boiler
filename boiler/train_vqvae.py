@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+import sys
 
 import torch
 import torch.nn as nn
@@ -7,14 +8,12 @@ import torch.optim
 import torch.optim.lr_scheduler
 from torch.utils.data import DataLoader, ConcatDataset
 from torch.utils.tensorboard import SummaryWriter
-
 import torchvision.utils
-
 from tqdm import tqdm
 
-from .dataset import WavFile
-from .mel import Audio2Mel
-from .import vqvae
+from boiler.dataset import WavFile
+from boiler.mel import Audio2Mel
+from boiler import vqvae
 
 steps = 0
 
@@ -25,10 +24,12 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
 
     sample_size = 25
 
+    model.train()
+
     for i, waveform in enumerate(loader):
         model.zero_grad()
 
-        waveform = waveform.cuda()
+        waveform = waveform.to(args.device)
 
         img = fft(waveform).detach().to(args.device).unsqueeze(1)
 
@@ -75,17 +76,12 @@ def train(args, epoch, loader, model, optimizer, scheduler, fft, writer):
 
             writer.add_image('sample', demo, steps)
 
-            if i == 0:
+            if i == 0 and args.quantize == 'fp32':
                 writer.add_graph(model, sample)
 
             model.train()
 
         steps += 1
-
-
-def make_dataloader(wav_dir: Path, shuffle: bool = False, batch_size: int = 128) -> DataLoader:
-    dataset = ConcatDataset([WavFile(wav) for wav in wav_dir.glob('*.wav')])
-    return DataLoader(dataset, batch_size=batch_size, num_workers=4, shuffle=shuffle)
 
 
 def main(args):
@@ -95,11 +91,36 @@ def main(args):
     writer = SummaryWriter(str(root))
 
     fft = Audio2Mel(n_mel_channels=args.n_mel_channels).to(args.device)
-    loader = make_dataloader(args.wav_dir, shuffle=True)
+    dataset = ConcatDataset([WavFile(wav) for wav in args.wav_dir.glob('*.wav')])
+    loader = DataLoader(dataset, batch_size=128, num_workers=4, shuffle=True)
     model = vqvae.VQVAE2(in_channel=1).to(args.device)
 
     if args.load_path:
         model.load_state_dict(torch.load(args.load_path, map_location=args.device))
+
+    if args.quantize == 'debug':
+        model.train()
+        print(model)
+        sys.exit(0)
+    if args.quantize == 'fbgemm':
+        raise RuntimeError("FBGEMM doesn't support transpose packing yet!")
+        # File "/home/proger/.local/lib/python3.8/site-packages/torch/nn/quantized/modules/conv.py", line 664, in set_weight_bias
+        #     self._packed_params = torch.ops.quantized.conv_transpose2d_prepack(
+        # RuntimeError: FBGEMM doesn't support transpose packing yet!
+        model.train()
+        model.qconfig = torch.quantization.get_default_qat_qconfig('fbgemm')
+        # use --quantize debug and add more once transpose packing is working
+        # otherwise try setting up a student encoder without transpose convs
+        fused_modules = [['enc_b.0', 'enc_b.1']]
+        model = torch.quantization.fuse_modules(model, fused_modules)
+        model = torch.quantization.prepare(model)
+    elif args.quantize == 'fp16':
+        model.train()
+        raise NotImplementedError()
+    elif args.quantize == 'fp32':
+        model.train()
+    else:
+        raise IndexError()
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
@@ -111,10 +132,23 @@ def main(args):
     for i in range(args.epoch):
         train(args, i, loader, model, optimizer, scheduler, fft, writer)
 
-        torch.save(model.state_dict(), root / f"vqvae_{str(i + 1).zfill(3)}.pt")
+        if args.quantize == 'fbgemm':
+            model.eval()
+            model_int8 = torch.quantization.convert(model.to('cpu'))
+            torch.save(model_int8.state_dict(), root / f"vqvae_fbgemm_{str(i + 1).zfill(3)}.pt")
+            model.train()
+        elif args.quantize == 'fp16':
+            model.train()
+            raise NotImplementedError()
+        elif args.quantize == 'fp32':
+            model.eval()
+            torch.save(model.state_dict(), root / f"vqvae_{str(i + 1).zfill(3)}.pt")
+            model.train()
+        else:
+            raise IndexError()
 
 
-if __name__ == "__main__":
+def make_parser() -> argparse.ArgumentParser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--epoch", type=int, default=300)
@@ -124,6 +158,9 @@ if __name__ == "__main__":
     parser.add_argument("--load_path", type=Path)
     parser.add_argument("--save_path", type=Path, required=True)
     parser.add_argument("--device", type=str, default='cuda')
+    parser.add_argument("--quantize", type=str, default='fp32',
+                        choices=['fp32', 'fbgemm', 'fp16', 'debug'],
+                        help="does quantization-aware training of the encoder where applicable")
     parser.add_argument("--latent_loss_weight", type=float, default=0.5, help="""
         Quote from https://sunniesuhyoung.github.io/files/vqvae.pdf:
 
@@ -134,8 +171,10 @@ if __name__ == "__main__":
         effects as the low rate setting of the vector quantizer, where the locality of the data space is better preserved.
         In short, with λ < 1, we can learn features that better preserve the similarity relations of the data space.
     """)
+    return parser
 
 
-    args = parser.parse_args()
+if __name__ == "__main__":
+    args = make_parser().parse_args()
     print(args)
     main(args)

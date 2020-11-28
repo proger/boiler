@@ -8,13 +8,15 @@ from boiler.mel import Audio2Mel
 from boiler import vqvae
 
 
-class MeanFreqTopVQVAE(nn.Module):
+class VQVAEEncoder(nn.Module):
     def __init__(self, pt_path, device):
         super().__init__()
         self.fft = Audio2Mel(n_mel_channels=80).to(device)
-        self.model = vqvae.VQVAE2(in_channel=1, n_embed=128).to(device)
+        self.model = vqvae.VQVAE2(in_channel=1, n_embed=(64,512)).to(device)
         self.model.load_state_dict(torch.load(pt_path, map_location=device))
 
+
+class MeanFreqTopVQVAE(VQVAEEncoder):
     def forward(self, batch):
         zs = self.model.encode(self.fft(batch).unsqueeze(1))
         quant_t = zs[0]
@@ -22,26 +24,12 @@ class MeanFreqTopVQVAE(nn.Module):
         return quant_t
 
 
-class BagTopVQVAE(nn.Module):
-    def __init__(self, pt_path, device):
-        super().__init__()
-
-        self.fft = Audio2Mel(n_mel_channels=80).to(device)
-        self.model = vqvae.VQVAE2(in_channel=1, n_embed=(64,512)).to(device)
-        self.model.load_state_dict(torch.load(pt_path, map_location=device))
-
+class BagTopVQVAE(VQVAEEncoder):
     def forward(self, batch):
         return self.model.encode_bag_t(self.fft(batch).unsqueeze(1), normalize=True)[0]
 
 
-class BagBottomVQVAE(nn.Module):
-    def __init__(self, pt_path, device):
-        super().__init__()
-
-        self.fft = Audio2Mel(n_mel_channels=80).to(device)
-        self.model = vqvae.VQVAE2(in_channel=1, n_embed=128).to(device)
-        self.model.load_state_dict(torch.load(pt_path, map_location=device))
-
+class BagBottomVQVAE(VQVAEEncoder):
     def forward(self, batch):
         return self.model.encode_bag(self.fft(batch).unsqueeze(1), normalize=True)[0]
 
