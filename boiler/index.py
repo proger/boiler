@@ -2,6 +2,7 @@ import argparse
 import gc
 from pathlib import Path
 import pickle
+from typing import Tuple
 
 import annoy
 from joblib import Parallel, delayed
@@ -9,6 +10,7 @@ import torch
 import torch.jit
 from tqdm import tqdm
 import numpy as np
+
 
 import tensorflow as tf
 import tensorboard as tb
@@ -21,7 +23,11 @@ from torch.utils.data import DataLoader, ConcatDataset
 
 import boiler.encoder
 
-def main(args):
+
+def make_embeddings(args):
+    """
+    Make embeddings from 'args.wav_dir', save them into Annoy and TF Projector and JIT-compile their model.
+    """
     coubs = sorted(args.wav_dir.glob('*.wav'))
     coub_dataset = ConcatDataset([boiler.dataset.WavFile(wav) for wav in coubs])
     coub_loader = DataLoader(coub_dataset, batch_size=64, shuffle=False, num_workers=4)
@@ -29,8 +35,8 @@ def main(args):
     model = getattr(boiler.encoder, args.encoder)(args.pt_path, args.device)
 
     embeddings = []
-    for coub in tqdm(coub_loader):
-        embeddings.append(model(coub.to(args.device)).detach().cpu())
+    for batch in tqdm(coub_loader):
+        embeddings.append(model(batch.to(args.device)).detach().cpu())
         gc.collect()
         torch.cuda.empty_cache()
     embeddings = torch.cat(embeddings)
@@ -41,14 +47,17 @@ def main(args):
     writer = SummaryWriter(log_dir=index_dir)
     writer.add_embedding(embeddings, global_step=None, metadata=[f'https://coub.com/view/{p.stem}' for p in coubs])
 
+    return index_dir, embeddings
+
+
+def make_index(embeddings: torch.FloatTensor, index_dir: Path, n_trees: int) -> Tuple[annoy.AnnoyIndex, Path]:
     index = annoy.AnnoyIndex(embeddings.size(1), 'angular')
     for i, vec in enumerate(embeddings):
         index.add_item(i, vec)
-
-    index.build(100)
+    index.build(n_trees)
     save_path = index_dir / 'annoy'
-    print('annoy index saved to', save_path)
     index.save(str(save_path))
+    return index, save_path
 
 
 def musicnn_penultimate(args):
@@ -63,7 +72,7 @@ def musicnn_penultimate(args):
             with open(f'musicnn/{wav.stem}.pickle', 'wb') as f:
                 pickle.dump(x, f)
             x = x[2]['penultimate'].mean(axis=0)
-            x = x/np.linalg.norm(x)
+            x = x / np.linalg.norm(x)
             return i, x
         except UnboundLocalError:
             return i, None
@@ -84,6 +93,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--n_trees", type=int, default=100, help="number of annoy trees (see https://github.com/spotify/annoy#tradeoffs)")
     parser.add_argument("--wav_dir", type=Path, required=True)
     parser.add_argument("--pt_path", type=Path, required=False, help="pytorch checkpoint")
     parser.add_argument("--device", type=str, default='cuda')
@@ -96,4 +106,6 @@ if __name__ == "__main__":
         musicnn_penultimate(args)
     else:
         assert args.pt_path is not None
-        main(args)
+        index_dir, embeddings = make_embeddings(args)
+        _, save_path = make_index(embeddings, args.n_trees, index_dir)
+        print('annoy index saved to', save_path)
