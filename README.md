@@ -57,7 +57,7 @@ The model is a [VQ-VAE2](https://github.com/rosinality/vq-vae-2-pytorch) with la
 To train you need a directory with 16-bit signed wav files of length 2**17 samples at rate of 16k samples per second.
 
 ```console
-% python3 -m boiler.train_vqvae --wav_dir /home/proger/coub-crawler/monthlyLog/wav --latent_loss_weight 0.5 --save_path exp/p_t64_b512 [--load_path exp/o_vectorquant_bigger_a/vqvae_084.pt]
+% python3 -m boiler.train_vqvae --wav_dir /home/proger/coub-crawler/monthlyLog/wav --save_path exp/p_t64_b512 [--load_path exp/o_vectorquant_bigger_a/vqvae_084.pt]
 ```
 
 To produce wav vectors I use a bag of the codebook words produced by the top level embedding.
