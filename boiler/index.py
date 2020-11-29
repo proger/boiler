@@ -8,19 +8,18 @@ import annoy
 from joblib import Parallel, delayed
 import torch
 import torch.jit
-from tqdm import tqdm
-import numpy as np
-
-
-import tensorflow as tf
-import tensorboard as tb
-tf.io.gfile = tb.compat.tensorflow_stub.io.gfile # https://stackoverflow.com/a/61624923
-
+from torch.utils.data import DataLoader, ConcatDataset
 from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
+
+try:
+    import tensorflow as tf
+    import tensorboard as tb
+    tf.io.gfile = tb.compat.tensorflow_stub.io.gfile  # https://stackoverflow.com/a/61624923
+except ImportError:  # tensorflow is not installed, it's ok
+    pass
 
 import boiler.dataset
-from torch.utils.data import DataLoader, ConcatDataset
-
 import boiler.encoder
 
 
@@ -62,6 +61,7 @@ def make_index(embeddings: torch.FloatTensor, model_dir: Path, n_trees: int) -> 
 
 def musicnn_penultimate(args):
     import musicnn.extractor
+    import numpy as np
 
     index = annoy.AnnoyIndex(200, 'euclidean')
 
