@@ -129,6 +129,6 @@ BOILER_MODEL_DIR=exp/p_t64_b512/vqvae_223/BagTopVQVAE uvicorn boiler.api.web:app
 Increasing the number of workers does not affect memory usage of the index. Batched APIs are currently out of scope.
 
 There is a single API call right now:
-- `POST /nearest` accepts a single embedding and returns a list of nearest coub_ids (the task of producing an embedding is left to the caller)
+- `POST /nearest` accepts a single embedding and returns a list of coubs (the task of producing an embedding is left to the caller)
 
-Visit http://localhost:8000/docs for details on API usage and examples.
+Visit http://localhost:8000/docs for details on API usage, type information and examples.
