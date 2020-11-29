@@ -11,7 +11,7 @@ setup(
     install_requires=[
         "annoy>=1.17,<1.18",
         "fastapi>=0.61.2,<0.62",
-        "joblib>=0.18,<0.19",
+        "joblib>=0.17,<0.19",
         "librosa>=0.8,<0.9",
         "musicnn>=0.1,<0.2",
         "pydantic>=1.7,<1.8",
