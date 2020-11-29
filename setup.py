@@ -6,7 +6,7 @@ setup(
     python_requires='>=3.8',
     author='Vlad Ki',
     author_email='vlad@kirillov.im',
-    packages=['boiler'],
+    packages=['boiler', 'boiler.api'],
     long_description=open('README.md').read(),
     install_requires=[
         "annoy>=1.17,<1.18",
