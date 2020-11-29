@@ -121,7 +121,7 @@ Encoder and index benchmarks are included in [benchmark-annoy.ipynb](benchmark-a
 
 [`boiler.api.web`](boiler/api/web.py) defineds a basic FastAPI-based frontend to nearest-neighbor search.
 
-```
+```console
 pip3 install uvicorn # you need this installed separately
 BOILER_MODEL_DIR=exp/p_t64_b512/vqvae_223/BagTopVQVAE uvicorn boiler.api.web:app --host 0.0.0.0 --port 8000 --workers 6
 ```
@@ -132,3 +132,13 @@ There is a single API call right now:
 - `POST /nearest` accepts a single embedding and returns a list of coubs (the task of producing an embedding is left to the caller)
 
 Visit http://localhost:8000/docs for details on API usage, type information and examples.
+
+## Streamlit-based browser
+
+[`boiler.app`](boiler/app.py) features a streamlit-based viewer app:
+
+```console
+pip3 install streamlit loguru # you need these separately
+
+streamlit run boiler/app.py
+```
