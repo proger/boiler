@@ -109,7 +109,7 @@ model_dir = Path('exp/p_t64_b512/vqvae_223/BagTopVQVAE')
 
 encoder = torch.jit.load(str(model_dir / 'encoder.pt'), map_location='cpu')
 
-x = encoder(torch.randn(1,1,2**17))
+x = encoder(torch.randn(1,1,2**17)).squeeze()
 
 index = boiler.api.nearest.Nearest(model_dir)
 print(index.search(x))
