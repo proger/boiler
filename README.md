@@ -1,5 +1,8 @@
 # boiler
 
+Boiler is a content-based recommender for coubs based on input audio clips. It consists of a VQ-VAE2 encoder that projects short audio clips and Annoy index
+that performs nearest-neighbor lookups.
+
 ## ~~Craving~~Crawling for Coubs
 
 I used a slightly patched version of https://github.com/flute/coub-crawler to download almost 24 hours of coubs in one run.
@@ -14,7 +17,7 @@ I used ffmpeg to convert mp4s to wavs:
 parallel -j6 -n1  ffmpeg -nostdin -i {} -vn -ar 16000 -ac 1 wav/{/.}.wav ::: video/*.mp4
 ```
 
-Based on the [distribution](https://github.com/glamp/bashplotlib) of audio lengths I've decided to pad each audio clip to 9s by repeating
+Based on the [distribution](https://github.com/glamp/bashplotlib) of audio lengths I've decided to pad each audio clip to 2**17 samples and repeating
 shorter clips and truncating longer ones:
 
 ```console
@@ -61,7 +64,13 @@ To train you need a directory with 16-bit signed wav files of length 2**17 sampl
 ```
 
 To produce wav vectors I use a bag of the codebook words produced by the top level embedding.
-There are some other encoders in [boiler/encoder.py](boiler/encoder.py).
+There are some other encoders in [boiler/encoder.py](boiler/encoder.py). Every encoder is an instance of `torch.nn.Module` and expects
+a normalized (see `torchaudio.load`) float WAV input of shape `(N, 1, 2**17)` that outputs a vector of `(N, D)` where D is encoder-specific (currently 64).
+
+The encoder is currently around 10M parameters due to large convolution kernels but could probably be made smaller.
+
+The quality of the model is currently checked manually by looking at Tensorflow Projector embeddings, potentially it may be possible to test embeddings
+using the GTZAN or MagnaTagATune datasets by defining successful recall as having embedded neighbors of query audios be of the same genre/having the same tags.
 
 ## Compiling the Encoder and Indexing the Dataset
 
@@ -81,10 +90,40 @@ exp/p_t64_b512/vqvae_223/BagTopVQVAE/annoy
 exp/p_t64_b512/vqvae_223/BagTopVQVAE/events.out.tfevents.1606498269.rt.2782441.0
 ```
 
-## API
+`boiler.index` outputs a *model directory* based on the vqvae checkpoint (argument `--pt_path`) and encoder name, so from `--pt_path exp/p_t64_b512/vqvae_223.pt BagTopVQVAE` the model directory will be called `exp/p_t64_b512/vqvae_223/BagTopVQVAE`.
+
+[`boiler.api.nearest.Nearest`](boiler/api/nearest.py) is the module that wraps Annoy and currently assumes all of the metadata (coub urls included in `metadata.tsv`) fits in RAM.
+
+Basic usage is:
+
+```python
+from pathlib import Path
+import torch
+import boiler.api.nearest
+
+model_dir = Path('exp/p_t64_b512/vqvae_223/BagTopVQVAE')
+
+encoder = torch.jit.load(str(model_dir / 'encoder.pt'), map_location='cpu')
+
+x = encoder(torch.randn(1,1,2**17))
+
+index = boiler.api.nearest.Nearest(model_dir)
+print(index.search(x))
+```
+
+Encoder and index benchmarks are included in [benchmark-annoy.ipynb](benchmark-annoy.ipynb) and [benchmark-encoder.ipynb](benchmark-encoder.ipynb)
+
+## Web API
+
+[`boiler.api.web`](boiler/api/web.py) defineds a basic FastAPI-based frontend to nearest-neighbor search.
 
 ```
-BOILER_INDEX_FILE=exp/p_t64_b512/vqvae_223/BagTopVQVAE/annoy uvicorn boiler.api.web:app --host 0.0.0.0 --port 8000 --workers 6
+BOILER_MODEL_DIR=exp/p_t64_b512/vqvae_223/BagTopVQVAE uvicorn boiler.api.web:app --host 0.0.0.0 --port 8000 --workers 6
 ```
 
-Visit http://localhost:8000/docs for the API overview.
+Increasing the number of workers does not affect memory usage of the index. Batched APIs are currently out of scope.
+
+There is a single API call right now:
+- `POST /nearest` accepts a single embedding and returns a list of nearest coub_ids (the task of producing an embedding is left to the caller)
+
+Visit http://localhost:8000/docs for details on API usage and examples.

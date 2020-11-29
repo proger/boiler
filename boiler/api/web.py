@@ -5,16 +5,11 @@ from typing import List
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from boiler.api.nearest import Nearest
+import boiler.api.nearest
 
-index_file = Path(os.environ['BOILER_INDEX_FILE'])
+model_dir = Path(os.environ['BOILER_MODEL_DIR'])
 
-nearest = Nearest(
-    index_file,
-    index_file.parent / '00000/default/metadata.tsv',
-    int(os.environ.get('BOILER_INDEX_DIM', 64)),
-    os.environ.get('BOILER_INDEX_KIND', 'angular')
-)
+nearest = boiler.api.nearest.Nearest(model_dir)
 
 app = FastAPI()
 

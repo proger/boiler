@@ -41,21 +41,21 @@ def make_embeddings(args):
         torch.cuda.empty_cache()
     embeddings = torch.cat(embeddings)
 
-    index_dir = args.pt_path.with_suffix('') / str(args.encoder)
-    torch.jit.script(model).save(str(index_dir / 'encoder.pt'))
+    model_dir = args.pt_path.with_suffix('') / str(args.encoder)
+    torch.jit.script(model).save(str(model_dir / 'encoder.pt'))
 
-    writer = SummaryWriter(log_dir=index_dir)
+    writer = SummaryWriter(log_dir=model_dir)
     writer.add_embedding(embeddings, global_step=None, metadata=[f'https://coub.com/view/{p.stem}' for p in coubs])
 
-    return index_dir, embeddings
+    return model_dir, embeddings
 
 
-def make_index(embeddings: torch.FloatTensor, index_dir: Path, n_trees: int) -> Tuple[annoy.AnnoyIndex, Path]:
+def make_index(embeddings: torch.FloatTensor, model_dir: Path, n_trees: int) -> Tuple[annoy.AnnoyIndex, Path]:
     index = annoy.AnnoyIndex(embeddings.size(1), 'angular')
     for i, vec in enumerate(embeddings):
         index.add_item(i, vec)
     index.build(n_trees)
-    save_path = index_dir / 'annoy'
+    save_path = model_dir / 'annoy'
     index.save(str(save_path))
     return index, save_path
 
@@ -106,6 +106,6 @@ if __name__ == "__main__":
         musicnn_penultimate(args)
     else:
         assert args.pt_path is not None
-        index_dir, embeddings = make_embeddings(args)
-        _, save_path = make_index(embeddings, args.n_trees, index_dir)
-        print('annoy index saved to', save_path)
+        model_dir, embeddings = make_embeddings(args)
+        make_index(embeddings, model_dir, args.n_trees)
+        print('model_dir =', model_dir)
