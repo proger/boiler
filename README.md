@@ -3,6 +3,10 @@
 Boiler is a content-based recommender for coubs based on input audio clips. It consists of a VQ-VAE2 encoder that projects short audio clips and Annoy index
 that performs nearest-neighbor lookups.
 
+```console
+pip3 install git+https://github.com/proger/boiler.git
+```
+
 ## ~~Craving~~Crawling for Coubs
 
 I used a slightly patched version of https://github.com/flute/coub-crawler to download almost 24 hours of coubs in one run.
@@ -64,7 +68,7 @@ To train you need a directory with 16-bit signed wav files of length 2**17 sampl
 ```
 
 To produce wav vectors I use a bag of the codebook words produced by the top level embedding.
-There are some other encoders in [boiler/encoder.py](boiler/encoder.py). Every encoder is an instance of `torch.nn.Module` and expects
+There are some other encoders in [`boiler.encoder`](boiler/encoder.py). Every encoder is an instance of `torch.nn.Module` and expects
 a normalized (see `torchaudio.load`) float WAV input of shape `(N, 1, 2**17)` that outputs a vector of `(N, D)` where D is encoder-specific (currently 64).
 
 The encoder is currently around 10M parameters due to large convolution kernels but could probably be made smaller.
@@ -90,7 +94,7 @@ exp/p_t64_b512/vqvae_223/BagTopVQVAE/annoy
 exp/p_t64_b512/vqvae_223/BagTopVQVAE/events.out.tfevents.1606498269.rt.2782441.0
 ```
 
-`boiler.index` outputs a *model directory* based on the vqvae checkpoint (argument `--pt_path`) and encoder name, so from `--pt_path exp/p_t64_b512/vqvae_223.pt BagTopVQVAE` the model directory will be called `exp/p_t64_b512/vqvae_223/BagTopVQVAE`.
+[`boiler.index`](boiler/index.py) outputs a *model directory* based on the vqvae checkpoint (argument `--pt_path`) and encoder name, so from `--pt_path exp/p_t64_b512/vqvae_223.pt BagTopVQVAE` the model directory will be called `exp/p_t64_b512/vqvae_223/BagTopVQVAE`.
 
 [`boiler.api.nearest.Nearest`](boiler/api/nearest.py) is the module that wraps Annoy and currently assumes all of the metadata (coub urls included in `metadata.tsv`) fits in RAM.
 
