@@ -109,4 +109,4 @@ if __name__ == "__main__":
         assert args.pt_path is not None
         model_dir, embeddings = make_embeddings(args)
         make_index(embeddings, model_dir, args.n_trees)
-        print('model_dir =', model_dir)
+        print(f'export BOILER_MODEL_DIR={model_dir}')
