@@ -14,7 +14,7 @@ class Nearest:
         self.index.load(str(index_file))
 
         with open(metadata_file) as f:
-            self.metadata = [line for line in f]
+            self.metadata = [line.strip() for line in f]
 
     def search(self, embedding, k=10):
         result = zip(*self.index.get_nns_by_vector(embedding, k, include_distances=True))
