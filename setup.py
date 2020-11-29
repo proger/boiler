@@ -16,6 +16,7 @@ setup(
         #"musicnn>=0.1,<0.2",
         "pydantic>=1.7,<1.8",
         "scipy>=1.5,<1.6.0",
+        "tensorboard>=2.4",
         "torch>=1.7,<1.8.0",
         "torchaudio>=0.7,<0.8.0",
         "torchvision>=0.8,<0.9.0",

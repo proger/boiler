@@ -122,6 +122,7 @@ Encoder and index benchmarks are included in [benchmark-annoy.ipynb](benchmark-a
 [`boiler.api.web`](boiler/api/web.py) defineds a basic FastAPI-based frontend to nearest-neighbor search.
 
 ```
+pip3 install uvicorn # you need this installed separately
 BOILER_MODEL_DIR=exp/p_t64_b512/vqvae_223/BagTopVQVAE uvicorn boiler.api.web:app --host 0.0.0.0 --port 8000 --workers 6
 ```
 
