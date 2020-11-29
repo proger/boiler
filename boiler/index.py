@@ -41,6 +41,7 @@ def make_embeddings(args):
     embeddings = torch.cat(embeddings)
 
     model_dir = args.pt_path.with_suffix('') / str(args.encoder)
+    model_dir.mkdir(parents=True, exist_ok=True)
     torch.jit.script(model).save(str(model_dir / 'encoder.pt'))
 
     writer = SummaryWriter(log_dir=model_dir)
